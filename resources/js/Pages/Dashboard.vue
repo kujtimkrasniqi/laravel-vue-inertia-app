@@ -1,51 +1,86 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
+import DashboardCards from '@/Components/DashboardCards.vue';
+import { Link } from '@inertiajs/vue3';
 
-const stats = [
-    { label: 'Total Users',   value: '—', icon: '👥' },
-    { label: 'Active Sessions', value: '—', icon: '🟢' },
-    { label: 'Revenue',        value: '—', icon: '💰' },
-    { label: 'Pending Tasks',  value: '—', icon: '📋' },
-];
+const props = defineProps({
+    clients: {
+        type: Array,
+        default: () => [],
+    },
+});
 </script>
 
 <template>
     <AppLayout>
-
-        <!-- Page Header -->
         <template #header>
-            <h1 class="text-2xl font-semibold text-gray-800">Dashboard</h1>
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-800">Dashboard</h1>
+                    <p class="text-sm text-gray-400 mt-0.5">Overview of your client base.</p>
+                </div>
+                <Link
+                    href="/clients"
+                    class="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition"
+                >
+                    View All Clients →
+                </Link>
+            </div>
         </template>
 
-        <!-- Welcome Banner -->
-        <div class="bg-indigo-600 rounded-2xl px-8 py-6 mb-8 text-white">
-            <p class="text-sm font-medium text-indigo-200 mb-1">Welcome back 👋</p>
-            <h2 class="text-3xl font-bold">Good to see you!</h2>
-            <p class="mt-1 text-indigo-200 text-sm">Here's what's happening with your app today.</p>
-        </div>
+        <!-- Stats cards wired to real client data -->
+        <DashboardCards :clients="clients" />
 
-        <!-- Stats Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div
-                v-for="stat in stats"
-                :key="stat.label"
-                class="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-5 flex items-center gap-4"
-            >
-                <div class="text-3xl">{{ stat.icon }}</div>
-                <div>
-                    <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">{{ stat.label }}</p>
-                    <p class="text-2xl font-bold text-gray-800 mt-0.5">{{ stat.value }}</p>
-                </div>
+        <!-- Quick summary table -->
+        <div class="mt-8 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h2 class="text-base font-semibold text-gray-700">Recent Clients</h2>
+                <Link href="/clients" class="text-sm text-indigo-600 hover:underline font-medium">
+                    Manage →
+                </Link>
             </div>
-        </div>
 
-        <!-- Placeholder Content Card -->
-        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-8 text-center">
-            <div class="text-5xl mb-3">🚀</div>
-            <h3 class="text-lg font-semibold text-gray-700">Project foundation is ready</h3>
-            <p class="text-sm text-gray-400 mt-1">
-                Laravel 12 · Vue 3 · Inertia.js · TailwindCSS v4 · Docker Sail · MySQL
-            </p>
+            <!-- Empty state -->
+            <div v-if="clients.length === 0" class="py-12 text-center">
+                <div class="text-4xl mb-2">📋</div>
+                <p class="text-gray-500 text-sm">No clients yet. <Link href="/clients" class="text-indigo-600 font-medium hover:underline">Add one →</Link></p>
+            </div>
+
+            <!-- Mini table -->
+            <table v-else class="w-full text-sm">
+                <thead>
+                    <tr class="bg-gray-50/60 border-b border-gray-100">
+                        <th class="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Name</th>
+                        <th class="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide hidden sm:table-cell">Phone</th>
+                        <th class="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Expiry</th>
+                        <th class="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    <tr
+                        v-for="client in clients.slice(0, 5)"
+                        :key="client.id"
+                        class="hover:bg-gray-50/50 transition-colors"
+                    >
+                        <td class="px-5 py-3.5 font-semibold text-gray-800">{{ client.name }}</td>
+                        <td class="px-5 py-3.5 text-gray-500 hidden sm:table-cell">{{ client.phone }}</td>
+                        <td class="px-5 py-3.5 text-gray-600">{{ client.expiry_date }}</td>
+                        <td class="px-5 py-3.5">
+                            <span
+                                class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold"
+                                :class="client.is_active
+                                    ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                                    : 'bg-red-50 text-red-600 ring-1 ring-red-200'"
+                            >
+                                <span class="w-1.5 h-1.5 rounded-full"
+                                    :class="client.is_active ? 'bg-emerald-500' : 'bg-red-400'"
+                                />
+                                {{ client.is_active ? 'Active' : 'Expired' }}
+                            </span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
 
     </AppLayout>
