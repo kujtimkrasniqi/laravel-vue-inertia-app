@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\ClientsExport;
 use App\Http\Requests\StoreClientRequest;
 use App\Http\Requests\UpdateClientRequest;
 use App\Models\Client;
@@ -10,6 +11,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ClientController extends Controller
 {
@@ -99,6 +102,22 @@ class ClientController extends Controller
         return redirect()
             ->route('clients.index')
             ->with('success', "Payment recorded. New expiry: {$client->expiry_date->toDateString()}.");
+    }
+
+    // -------------------------------------------------------------------------
+    // GET /clients/export?filter=active
+    // -------------------------------------------------------------------------
+
+    public function export(Request $request): BinaryFileResponse
+    {
+        $filter = in_array($request->query('filter'), self::FILTERS)
+            ? $request->query('filter')
+            : null;
+
+        $suffix   = $filter ? "-{$filter}" : '';
+        $filename = 'clients' . $suffix . '-' . now()->format('Y-m-d') . '.xlsx';
+
+        return Excel::download(new ClientsExport($filter), $filename);
     }
 
     // -------------------------------------------------------------------------
