@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -35,16 +36,51 @@ class Client extends Model
     }
 
     // -------------------------------------------------------------------------
-    // Helpers
+    // Accessors (virtual attributes via Laravel Attribute casting)
     // -------------------------------------------------------------------------
 
     /**
-     * Whether the client subscription is currently active.
+     * is_active: true when expiry_date >= today.
      */
-    public function isActive(): bool
+    protected function isActive(): Attribute
     {
-        return Carbon::today()->lte($this->expiry_date);
+        return Attribute::make(
+            get: fn () => Carbon::today()->lte($this->expiry_date),
+        );
     }
+
+    /**
+     * is_expired: true when expiry_date < today.
+     */
+    protected function isExpired(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => Carbon::today()->gt($this->expiry_date),
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Actions
+    // -------------------------------------------------------------------------
+
+    /**
+     * Mark the client as paid.
+     *
+     * Extends expiry from the current expiry_date (not today),
+     * so renewals always stack correctly regardless of when payment is made.
+     *
+     * Before: expiry_date = 2026-04-25
+     * After:  expiry_date = 2026-05-25
+     */
+    public function markAsPaid(): void
+    {
+        $this->expiry_date = $this->expiry_date->addMonth();
+        $this->save();
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
 
     /**
      * Number of days remaining until expiry (0 if already expired).
