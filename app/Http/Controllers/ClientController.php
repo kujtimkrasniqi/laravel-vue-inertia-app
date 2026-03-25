@@ -6,9 +6,9 @@ use App\Exports\ClientsExport;
 use App\Http\Requests\StoreClientRequest;
 use App\Http\Requests\UpdateClientRequest;
 use App\Models\Client;
+use App\Services\ClientQueryService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
@@ -16,11 +16,9 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ClientController extends Controller
 {
-    // -------------------------------------------------------------------------
-    // Allowed filter values
-    // -------------------------------------------------------------------------
-
-    private const FILTERS = ['all', 'active', 'expired', 'this_week', 'this_month'];
+    public function __construct(
+        private readonly ClientQueryService $query,
+    ) {}
 
     // -------------------------------------------------------------------------
     // GET /clients?filter=active
@@ -28,27 +26,12 @@ class ClientController extends Controller
 
     public function index(Request $request): Response
     {
-        $filter   = in_array($request->query('filter'), self::FILTERS)
-            ? $request->query('filter')
-            : 'all';
-
-        $today    = Carbon::today();
-        $weekEnd  = Carbon::today()->endOfWeek();
-        $monthEnd = Carbon::today()->endOfMonth();
-
-        $clients = Client::query()
-            ->when($filter === 'active',     fn ($q) => $q->where('expiry_date', '>=', $today))
-            ->when($filter === 'expired',    fn ($q) => $q->where('expiry_date', '<',  $today))
-            ->when($filter === 'this_week',  fn ($q) => $q->whereBetween('expiry_date', [$today, $weekEnd]))
-            ->when($filter === 'this_month', fn ($q) => $q->whereBetween('expiry_date', [$today, $monthEnd]))
-            ->orderByDesc('created_at')
-            ->get()
-            ->map(fn (Client $client) => $this->formatClient($client));
+        $filter = ClientQueryService::resolveFilter($request->query('filter'));
 
         return Inertia::render('Clients/Index', [
-            'clients'      => $clients,
+            'clients'      => $this->query->filteredList($filter === 'all' ? null : $filter),
             'activeFilter' => $filter,
-            'stats'        => $this->buildStats(),
+            'stats'        => $this->query->stats(),
         ]);
     }
 
@@ -93,6 +76,11 @@ class ClientController extends Controller
 
     // -------------------------------------------------------------------------
     // PATCH /clients/{client}/mark-as-paid
+    //
+    // Extends expiry_date by +1 month from the CURRENT expiry_date — not today.
+    // This ensures renewals stack correctly even when paid early or late:
+    //   - Paid early  → no days lost, full new month from original expiry
+    //   - Paid late   → no free days gained, picks up from where it expired
     // -------------------------------------------------------------------------
 
     public function markAsPaid(Client $client): RedirectResponse
@@ -110,54 +98,13 @@ class ClientController extends Controller
 
     public function export(Request $request): BinaryFileResponse
     {
-        $filter = in_array($request->query('filter'), self::FILTERS)
-            ? $request->query('filter')
-            : null;
-
-        $suffix   = $filter ? "-{$filter}" : '';
+        $filter   = ClientQueryService::resolveFilter($request->query('filter'));
+        $suffix   = $filter !== 'all' ? "-{$filter}" : '';
         $filename = 'clients' . $suffix . '-' . now()->format('Y-m-d') . '.xlsx';
 
-        return Excel::download(new ClientsExport($filter), $filename);
-    }
-
-    // -------------------------------------------------------------------------
-    // Private helpers
-    // -------------------------------------------------------------------------
-
-    /**
-     * Aggregate stats — always reflects the full unfiltered dataset.
-     * Uses COUNT queries instead of loading collections into memory.
-     */
-    private function buildStats(): array
-    {
-        $today    = Carbon::today();
-        $weekEnd  = Carbon::today()->endOfWeek();
-        $monthEnd = Carbon::today()->endOfMonth();
-
-        return [
-            'total'      => Client::count(),
-            'active'     => Client::where('expiry_date', '>=', $today)->count(),
-            'expired'    => Client::where('expiry_date', '<',  $today)->count(),
-            'this_week'  => Client::whereBetween('expiry_date', [$today, $weekEnd])->count(),
-            'this_month' => Client::whereBetween('expiry_date', [$today, $monthEnd])->count(),
-        ];
-    }
-
-    /**
-     * Map a Client model to a plain array safe for Inertia / JSON.
-     */
-    private function formatClient(Client $client): array
-    {
-        return [
-            'id'             => $client->id,
-            'name'           => $client->name,
-            'phone'          => $client->phone,
-            'email'          => $client->email,
-            'start_date'     => $client->start_date->toDateString(),
-            'expiry_date'    => $client->expiry_date->toDateString(),
-            'is_active'      => $client->is_active,
-            'is_expired'     => $client->is_expired,
-            'days_remaining' => $client->daysRemaining(),
-        ];
+        return Excel::download(
+            new ClientsExport($filter !== 'all' ? $filter : null),
+            $filename,
+        );
     }
 }

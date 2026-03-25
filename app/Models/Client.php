@@ -6,6 +6,29 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
+/**
+ * Client model.
+ *
+ * Lifecycle note:
+ *   expiry_date is auto-set by ClientObserver::creating() to start_date + 1 month
+ *   when no explicit expiry_date is supplied on creation.
+ *
+ * Payment note:
+ *   markAsPaid() always extends from expiry_date — never from today.
+ *   This guarantees renewals stack correctly whether payment is early or late.
+ *
+ * @property int         $id
+ * @property string      $name
+ * @property string      $phone
+ * @property string|null $email
+ * @property Carbon      $start_date
+ * @property Carbon      $expiry_date
+ * @property Carbon      $created_at
+ * @property Carbon      $updated_at
+ *
+ * @property-read bool $is_active
+ * @property-read bool $is_expired
+ */
 class Client extends Model
 {
     protected $fillable = [
@@ -22,25 +45,11 @@ class Client extends Model
     ];
 
     // -------------------------------------------------------------------------
-    // Boot: auto-set expiry_date = start_date + 1 month on create
-    // -------------------------------------------------------------------------
-
-    protected static function booted(): void
-    {
-        static::creating(function (Client $client): void {
-            if (! $client->expiry_date && $client->start_date) {
-                $client->expiry_date = Carbon::parse($client->start_date)
-                    ->addMonth();
-            }
-        });
-    }
-
-    // -------------------------------------------------------------------------
-    // Accessors (virtual attributes via Laravel Attribute casting)
+    // Accessors
     // -------------------------------------------------------------------------
 
     /**
-     * is_active: true when expiry_date >= today.
+     * True when expiry_date >= today (subscription is still valid).
      */
     protected function isActive(): Attribute
     {
@@ -50,7 +59,7 @@ class Client extends Model
     }
 
     /**
-     * is_expired: true when expiry_date < today.
+     * True when expiry_date < today (subscription has lapsed).
      */
     protected function isExpired(): Attribute
     {
@@ -64,13 +73,19 @@ class Client extends Model
     // -------------------------------------------------------------------------
 
     /**
-     * Mark the client as paid.
+     * Record a payment by extending the subscription by one calendar month.
      *
-     * Extends expiry from the current expiry_date (not today),
-     * so renewals always stack correctly regardless of when payment is made.
+     * Design decision — extend from expiry_date, not today:
      *
-     * Before: expiry_date = 2026-04-25
-     * After:  expiry_date = 2026-05-25
+     *   Scenario A — client pays 5 days BEFORE expiry:
+     *     expiry_date = Apr 25  →  new expiry = May 25  (full month preserved)
+     *
+     *   Scenario B — client pays 5 days AFTER expiry:
+     *     expiry_date = Apr 25  →  new expiry = May 25  (no free days granted)
+     *
+     *   Scenario C — pay twice in a row (two months at once):
+     *     call markAsPaid() → May 25
+     *     call markAsPaid() → Jun 25  (stacks correctly)
      */
     public function markAsPaid(): void
     {
@@ -83,7 +98,7 @@ class Client extends Model
     // -------------------------------------------------------------------------
 
     /**
-     * Number of days remaining until expiry (0 if already expired).
+     * Days remaining until expiry. Returns 0 if the subscription has expired.
      */
     public function daysRemaining(): int
     {

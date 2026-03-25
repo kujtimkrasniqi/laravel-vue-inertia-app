@@ -1,6 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import DashboardCards from '@/Components/DashboardCards.vue';
+import StatusBadge from '@/Components/StatusBadge.vue';
 import { Link } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -93,18 +94,7 @@ const props = defineProps({
                             </span>
                         </td>
                         <td class="px-5 py-3.5">
-                            <span
-                                class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
-                                :class="client.is_active
-                                    ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-                                    : 'bg-red-50 text-red-600 ring-1 ring-red-200'"
-                            >
-                                <span
-                                    class="w-1.5 h-1.5 rounded-full"
-                                    :class="client.is_active ? 'bg-emerald-500' : 'bg-red-400'"
-                                />
-                                {{ client.is_active ? 'Active' : 'Expired' }}
-                            </span>
+                            <StatusBadge :active="client.is_active" />
                         </td>
                     </tr>
                 </tbody>
