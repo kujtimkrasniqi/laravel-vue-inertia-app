@@ -25,13 +25,13 @@ class ClientController extends Controller
 
     public function index(Request $request): Response
     {
-        $filter = in_array($request->query('filter'), self::FILTERS)
+        $filter   = in_array($request->query('filter'), self::FILTERS)
             ? $request->query('filter')
             : 'all';
 
-        $today     = Carbon::today();
-        $weekEnd   = Carbon::today()->endOfWeek();
-        $monthEnd  = Carbon::today()->endOfMonth();
+        $today    = Carbon::today();
+        $weekEnd  = Carbon::today()->endOfWeek();
+        $monthEnd = Carbon::today()->endOfMonth();
 
         $clients = Client::query()
             ->when($filter === 'active',     fn ($q) => $q->where('expiry_date', '>=', $today))
@@ -40,21 +40,12 @@ class ClientController extends Controller
             ->when($filter === 'this_month', fn ($q) => $q->whereBetween('expiry_date', [$today, $monthEnd]))
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn (Client $client) => [
-                'id'             => $client->id,
-                'name'           => $client->name,
-                'phone'          => $client->phone,
-                'email'          => $client->email,
-                'start_date'     => $client->start_date->toDateString(),
-                'expiry_date'    => $client->expiry_date->toDateString(),
-                'is_active'      => $client->is_active,
-                'is_expired'     => $client->is_expired,
-                'days_remaining' => $client->daysRemaining(),
-            ]);
+            ->map(fn (Client $client) => $this->formatClient($client));
 
         return Inertia::render('Clients/Index', [
-            'clients'       => $clients,
-            'activeFilter'  => $filter,
+            'clients'      => $clients,
+            'activeFilter' => $filter,
+            'stats'        => $this->buildStats(),
         ]);
     }
 
@@ -108,5 +99,46 @@ class ClientController extends Controller
         return redirect()
             ->route('clients.index')
             ->with('success', "Payment recorded. New expiry: {$client->expiry_date->toDateString()}.");
+    }
+
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Aggregate stats — always reflects the full unfiltered dataset.
+     * Uses COUNT queries instead of loading collections into memory.
+     */
+    private function buildStats(): array
+    {
+        $today    = Carbon::today();
+        $weekEnd  = Carbon::today()->endOfWeek();
+        $monthEnd = Carbon::today()->endOfMonth();
+
+        return [
+            'total'      => Client::count(),
+            'active'     => Client::where('expiry_date', '>=', $today)->count(),
+            'expired'    => Client::where('expiry_date', '<',  $today)->count(),
+            'this_week'  => Client::whereBetween('expiry_date', [$today, $weekEnd])->count(),
+            'this_month' => Client::whereBetween('expiry_date', [$today, $monthEnd])->count(),
+        ];
+    }
+
+    /**
+     * Map a Client model to a plain array safe for Inertia / JSON.
+     */
+    private function formatClient(Client $client): array
+    {
+        return [
+            'id'             => $client->id,
+            'name'           => $client->name,
+            'phone'          => $client->phone,
+            'email'          => $client->email,
+            'start_date'     => $client->start_date->toDateString(),
+            'expiry_date'    => $client->expiry_date->toDateString(),
+            'is_active'      => $client->is_active,
+            'is_expired'     => $client->is_expired,
+            'days_remaining' => $client->daysRemaining(),
+        ];
     }
 }

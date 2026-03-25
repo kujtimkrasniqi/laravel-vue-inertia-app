@@ -15,6 +15,12 @@ const props = defineProps({
         type: String,
         default: 'all',
     },
+    stats: {
+        type: Object,
+        default: () => ({
+            total: 0, active: 0, expired: 0, this_week: 0, this_month: 0,
+        }),
+    },
 });
 
 // ── Modal state ──────────────────────────────────────────────────────────────
@@ -62,14 +68,14 @@ function closeForm() {
             </div>
         </template>
 
-        <!-- Stats Cards — always uses ALL clients from the unfiltered set -->
-        <DashboardCards :clients="clients" class="mb-6" />
+        <!-- Stats Cards — always uses full unfiltered counts from server -->
+        <DashboardCards :stats="stats" class="mb-6" />
 
         <!-- Filter Bar -->
         <div class="mb-5">
             <FilterBar
                 :active-filter="activeFilter"
-                :clients="clients"
+                :stats="stats"
             />
         </div>
 
