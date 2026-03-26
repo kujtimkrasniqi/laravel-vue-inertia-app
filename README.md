@@ -18,10 +18,13 @@ A full-stack client management application built with:
 Before you begin, make sure you have the following installed on your machine:
 
 - **Docker Desktop** — [https://www.docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop)
+- **PHP 8.1+** + **Composer** — needed once to bootstrap the vendor directory before Sail takes over
+  - If PHP/Composer are **not** available, the install script falls back to Docker automatically
 
-> **That's it.** No local PHP, Composer, or Node.js installation required.
-> Composer runs inside Docker during install, so `ext-gd` and all PHP extensions are always available.
-> After the first install, **everything runs through Sail**.
+> `composer.json` includes `"platform": {"ext-gd": "1.0"}` so Composer resolves packages correctly
+> on any host, **even without `ext-gd` locally**. The actual extension is present in the Sail container.
+>
+> After the first install, **everything runs through Sail** (no local PHP/Node needed day-to-day).
 
 ---
 
@@ -39,21 +42,22 @@ bash install.sh
 ```
 
 The script will:
-1. Copy `.env.example` → `.env`
-2. Install Composer dependencies **inside Docker** (no host PHP needed, ext-gd included)
-3. Generate `APP_KEY`
-4. Build the Sail Docker image
-5. Start containers (`sail up -d`)
-6. Wait for MySQL to be ready
-7. Run migrations + seed 14 sample clients
-8. Install Node.js dependencies inside the container
-9. Build frontend assets (Vite + Tailwind)
+1. Detect Docker, PHP, and Composer on your host
+2. Copy `.env.example` → `.env`
+3. Install Composer dependencies (host PHP if available, Docker fallback otherwise)
+4. Generate `APP_KEY`
+5. Build the Sail Docker image
+6. Start containers (`sail up -d`)
+7. Wait for MySQL to be ready
+8. Run migrations + seed 14 sample clients
+9. Install Node.js dependencies inside the container
+10. Build frontend assets (Vite + Tailwind)
 
 **Done** — open [http://localhost](http://localhost).
 
 ---
 
-### Option B — Manual (step by step, Docker-only)
+### Option B — Manual (step by step)
 
 ```bash
 # 1. Clone
@@ -63,21 +67,12 @@ cd laravel-vue-inertia-app
 # 2. Environment
 cp .env.example .env
 
-# 3. Install PHP dependencies via Docker (no host PHP/ext-gd required)
-docker run --rm \
-    -u "$(id -u):$(id -g)" \
-    -v "$(pwd):/var/www/html" \
-    -w /var/www/html \
-    laravelsail/php82-composer:latest \
-    composer install --no-interaction --prefer-dist --optimize-autoloader --no-scripts
+# 3. Install PHP dependencies
+#    composer.json has "platform": {"ext-gd": "1.0"} so this works on any host
+composer install --no-interaction --prefer-dist --optimize-autoloader --no-scripts
 
-# 4. Generate app key via Docker
-docker run --rm \
-    -u "$(id -u):$(id -g)" \
-    -v "$(pwd):/var/www/html" \
-    -w /var/www/html \
-    laravelsail/php82-composer:latest \
-    php artisan key:generate --ansi
+# 4. Generate app key
+php artisan key:generate
 
 # 5. Build & start Docker containers
 ./vendor/bin/sail build --no-cache

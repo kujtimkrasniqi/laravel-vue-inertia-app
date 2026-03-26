@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # =============================================================================
-# install.sh — First-time project setup (Docker-only, no host PHP required)
+# install.sh — First-time project setup
 #
 # Requires on the HOST machine only:
 #   - Docker + Docker Compose  (https://docs.docker.com/get-docker/)
 #
-# Composer dependencies are installed INSIDE Docker, so ext-gd and all other
-# PHP extensions are always available — no host PHP installation needed.
+# composer.json includes "platform": {"ext-gd": "1.0"} so Composer resolves
+# packages correctly on any host, even without ext-gd installed locally.
+# The actual ext-gd is present in the Sail container at runtime.
 #
-# After this script runs, everything is run via:
+# After this script runs, everything else is done via:
 #   ./vendor/bin/sail <command>
 # =============================================================================
 
@@ -34,7 +35,6 @@ echo "  ██████╔╝███████╗   ██║   ╚██
 echo "  ╚═════╝ ╚══════╝   ╚═╝    ╚═════╝ ╚═╝     "
 echo -e "${NC}"
 echo "  Laravel + Vue 3 + Inertia.js — First-time install"
-echo "  (No host PHP required — Composer runs inside Docker)"
 echo ""
 
 # ── 1. Check Docker ───────────────────────────────────────────────────────────
@@ -44,7 +44,36 @@ if ! docker info > /dev/null 2>&1; then
 fi
 ok "Docker is running"
 
-# ── 2. Copy .env ──────────────────────────────────────────────────────────────
+# ── 2. Find PHP binary ────────────────────────────────────────────────────────
+step "Locating PHP binary..."
+PHP_BIN=""
+for candidate in php php8.4 php8.3 php8.2 php8.1; do
+    if command -v "$candidate" > /dev/null 2>&1; then
+        PHP_BIN="$candidate"
+        break
+    fi
+done
+
+if [ -z "$PHP_BIN" ]; then
+    warn "PHP not found on host — falling back to Docker for Composer bootstrap."
+    PHP_BIN=""
+else
+    PHP_VERSION=$("$PHP_BIN" -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+    ok "PHP $PHP_VERSION found at $(command -v "$PHP_BIN")"
+fi
+
+# ── 3. Find Composer binary ───────────────────────────────────────────────────
+COMPOSER_BIN=""
+if [ -n "$PHP_BIN" ]; then
+    for candidate in composer composer.phar /usr/local/bin/composer; do
+        if command -v "$candidate" > /dev/null 2>&1 || [ -f "$candidate" ]; then
+            COMPOSER_BIN="$candidate"
+            break
+        fi
+    done
+fi
+
+# ── 4. Copy .env ──────────────────────────────────────────────────────────────
 step "Setting up environment file..."
 if [ ! -f .env ]; then
     cp .env.example .env
@@ -53,38 +82,51 @@ else
     warn ".env already exists — skipping copy"
 fi
 
-# ── 3. Install Composer dependencies via Docker (has all PHP extensions) ──────
-step "Installing PHP dependencies via Docker composer image..."
-echo "  (This avoids needing ext-gd or any PHP extension on your host machine)"
-docker run --rm \
-    -u "$(id -u):$(id -g)" \
-    -v "$(pwd):/var/www/html" \
-    -w /var/www/html \
-    laravelsail/php82-composer:latest \
-    composer install --no-interaction --prefer-dist --optimize-autoloader --no-scripts
+# ── 5. Install Composer dependencies ─────────────────────────────────────────
+# composer.json has "platform": {"ext-gd": "1.0"} so Composer treats ext-gd
+# as satisfied during dependency resolution on any host machine.
+step "Installing PHP dependencies via Composer..."
+if [ -n "$COMPOSER_BIN" ] && [ -n "$PHP_BIN" ]; then
+    echo "  Using host Composer: $COMPOSER_BIN"
+    "$PHP_BIN" "$COMPOSER_BIN" install \
+        --no-interaction --prefer-dist --optimize-autoloader --no-scripts
+else
+    echo "  No host Composer found — using Docker (laravelsail/php82-composer)."
+    docker run --rm \
+        -u "$(id -u):$(id -g)" \
+        -v "$(pwd):/var/www/html" \
+        -w /var/www/html \
+        laravelsail/php82-composer:latest \
+        composer install \
+            --no-interaction --prefer-dist --optimize-autoloader --no-scripts
+fi
 ok "Composer dependencies installed"
 
-# ── 4. Generate app key via Docker ────────────────────────────────────────────
+# ── 6. Generate app key ───────────────────────────────────────────────────────
 step "Generating application key..."
-docker run --rm \
-    -u "$(id -u):$(id -g)" \
-    -v "$(pwd):/var/www/html" \
-    -w /var/www/html \
-    laravelsail/php82-composer:latest \
-    php artisan key:generate --ansi
+if [ -n "$PHP_BIN" ]; then
+    "$PHP_BIN" artisan key:generate --ansi
+else
+    docker run --rm \
+        -u "$(id -u):$(id -g)" \
+        -v "$(pwd):/var/www/html" \
+        -w /var/www/html \
+        laravelsail/php82-composer:latest \
+        php artisan key:generate --ansi
+fi
 ok "Application key generated"
 
-# ── 5. Build Sail Docker image ────────────────────────────────────────────────
+# ── 7. Build Sail Docker image ────────────────────────────────────────────────
 step "Building Docker containers (this may take a few minutes on first run)..."
 ./vendor/bin/sail build --no-cache
 ok "Docker image built"
 
-# ── 6. Start containers ───────────────────────────────────────────────────────
+# ── 8. Start containers ───────────────────────────────────────────────────────
 step "Starting containers in background..."
 ./vendor/bin/sail up -d
 ok "Containers started"
 
-# ── 7. Wait for MySQL to be ready ────────────────────────────────────────────
+# ── 9. Wait for MySQL to be ready ────────────────────────────────────────────
 step "Waiting for MySQL to be ready..."
 RETRIES=30
 until ./vendor/bin/sail exec -T mysql mysqladmin ping --silent 2>/dev/null; do
@@ -98,17 +140,17 @@ done
 echo ""
 ok "MySQL is ready"
 
-# ── 8. Run migrations + seed ─────────────────────────────────────────────────
+# ── 10. Run migrations + seed ─────────────────────────────────────────────────
 step "Running migrations and seeding sample data..."
 ./vendor/bin/sail artisan migrate --seed --ansi
 ok "Database migrated and seeded (14 sample clients created)"
 
-# ── 9. Install Node dependencies ─────────────────────────────────────────────
+# ── 11. Install Node dependencies ────────────────────────────────────────────
 step "Installing Node.js dependencies..."
 ./vendor/bin/sail npm install
 ok "Node.js dependencies installed"
 
-# ── 10. Build frontend assets ─────────────────────────────────────────────────
+# ── 12. Build frontend assets ─────────────────────────────────────────────────
 step "Building frontend assets (Vite + TailwindCSS)..."
 ./vendor/bin/sail npm run build
 ok "Frontend assets built"
