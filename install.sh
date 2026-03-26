@@ -63,14 +63,27 @@ else
 fi
 
 # ── 3. Find Composer binary ───────────────────────────────────────────────────
-COMPOSER_BIN=""
+# COMPOSER_CMD holds the full command to run Composer, e.g.:
+#   "composer"               — system-installed executable (most common)
+#   "php /path/to/composer.phar" — manual .phar install
+COMPOSER_CMD=""
 if [ -n "$PHP_BIN" ]; then
-    for candidate in composer composer.phar /usr/local/bin/composer; do
-        if command -v "$candidate" > /dev/null 2>&1 || [ -f "$candidate" ]; then
-            COMPOSER_BIN="$candidate"
+    # Check for an executable composer script first (installed via apt, brew, etc.)
+    for candidate in composer /usr/local/bin/composer /usr/bin/composer "$HOME/.local/bin/composer"; do
+        if command -v "$candidate" > /dev/null 2>&1; then
+            COMPOSER_CMD="$candidate"
             break
         fi
     done
+    # Fall back to running a .phar file directly with PHP
+    if [ -z "$COMPOSER_CMD" ]; then
+        for phar in composer.phar /usr/local/bin/composer.phar "$HOME/composer.phar"; do
+            if [ -f "$phar" ]; then
+                COMPOSER_CMD="$PHP_BIN $phar"
+                break
+            fi
+        done
+    fi
 fi
 
 # ── 4. Copy .env ──────────────────────────────────────────────────────────────
@@ -86,9 +99,9 @@ fi
 # composer.json has "platform": {"ext-gd": "1.0"} so Composer treats ext-gd
 # as satisfied during dependency resolution on any host machine.
 step "Installing PHP dependencies via Composer..."
-if [ -n "$COMPOSER_BIN" ] && [ -n "$PHP_BIN" ]; then
-    echo "  Using host Composer: $COMPOSER_BIN"
-    "$PHP_BIN" "$COMPOSER_BIN" install \
+if [ -n "$COMPOSER_CMD" ]; then
+    echo "  Using host Composer: $COMPOSER_CMD"
+    $COMPOSER_CMD install \
         --no-interaction --prefer-dist --optimize-autoloader --no-scripts
 else
     echo "  No host Composer found — using Docker (laravelsail/php82-composer)."
