@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
-# install.sh — First-time project setup
+# install.sh — First-time project setup (Docker-only, no host PHP required)
 #
 # Requires on the HOST machine only:
 #   - Docker + Docker Compose  (https://docs.docker.com/get-docker/)
-#   - PHP 8.2+ CLI             (only to bootstrap Composer / vendor)
 #
-# After this script runs, everything else is done via:
+# Composer dependencies are installed INSIDE Docker, so ext-gd and all other
+# PHP extensions are always available — no host PHP installation needed.
+#
+# After this script runs, everything is run via:
 #   ./vendor/bin/sail <command>
 # =============================================================================
 
-set -e
+set -euo pipefail
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -32,6 +34,7 @@ echo "  ██████╔╝███████╗   ██║   ╚██
 echo "  ╚═════╝ ╚══════╝   ╚═╝    ╚═════╝ ╚═╝     "
 echo -e "${NC}"
 echo "  Laravel + Vue 3 + Inertia.js — First-time install"
+echo "  (No host PHP required — Composer runs inside Docker)"
 echo ""
 
 # ── 1. Check Docker ───────────────────────────────────────────────────────────
@@ -41,15 +44,7 @@ if ! docker info > /dev/null 2>&1; then
 fi
 ok "Docker is running"
 
-# ── 2. Check PHP ──────────────────────────────────────────────────────────────
-step "Checking PHP (needed once to install Composer deps)..."
-if ! command -v php &> /dev/null; then
-    fail "PHP not found on host. Install PHP 8.2+ to bootstrap the project."
-fi
-PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
-ok "PHP $PHP_VERSION found"
-
-# ── 3. Copy .env ──────────────────────────────────────────────────────────────
+# ── 2. Copy .env ──────────────────────────────────────────────────────────────
 step "Setting up environment file..."
 if [ ! -f .env ]; then
     cp .env.example .env
@@ -58,32 +53,43 @@ else
     warn ".env already exists — skipping copy"
 fi
 
-# ── 4. Install Composer dependencies (without dev scripts, no interaction) ───
-step "Installing PHP dependencies via Composer..."
-composer install --no-interaction --prefer-dist --optimize-autoloader
+# ── 3. Install Composer dependencies via Docker (has all PHP extensions) ──────
+step "Installing PHP dependencies via Docker composer image..."
+echo "  (This avoids needing ext-gd or any PHP extension on your host machine)"
+docker run --rm \
+    -u "$(id -u):$(id -g)" \
+    -v "$(pwd):/var/www/html" \
+    -w /var/www/html \
+    laravelsail/php82-composer:latest \
+    composer install --no-interaction --prefer-dist --optimize-autoloader --no-scripts
 ok "Composer dependencies installed"
 
-# ── 5. Generate app key ───────────────────────────────────────────────────────
+# ── 4. Generate app key via Docker ────────────────────────────────────────────
 step "Generating application key..."
-php artisan key:generate --ansi
+docker run --rm \
+    -u "$(id -u):$(id -g)" \
+    -v "$(pwd):/var/www/html" \
+    -w /var/www/html \
+    laravelsail/php82-composer:latest \
+    php artisan key:generate --ansi
 ok "Application key generated"
 
-# ── 6. Build Sail Docker image ────────────────────────────────────────────────
+# ── 5. Build Sail Docker image ────────────────────────────────────────────────
 step "Building Docker containers (this may take a few minutes on first run)..."
 ./vendor/bin/sail build --no-cache
 ok "Docker image built"
 
-# ── 7. Start containers ───────────────────────────────────────────────────────
+# ── 6. Start containers ───────────────────────────────────────────────────────
 step "Starting containers in background..."
 ./vendor/bin/sail up -d
 ok "Containers started"
 
-# ── 8. Wait for MySQL to be ready ────────────────────────────────────────────
+# ── 7. Wait for MySQL to be ready ────────────────────────────────────────────
 step "Waiting for MySQL to be ready..."
 RETRIES=30
-until ./vendor/bin/sail exec mysql mysqladmin ping --silent 2>/dev/null; do
+until ./vendor/bin/sail exec -T mysql mysqladmin ping --silent 2>/dev/null; do
     RETRIES=$((RETRIES - 1))
-    if [ $RETRIES -eq 0 ]; then
+    if [ "$RETRIES" -eq 0 ]; then
         fail "MySQL did not become ready in time. Check: ./vendor/bin/sail logs mysql"
     fi
     echo -n "."
@@ -92,17 +98,17 @@ done
 echo ""
 ok "MySQL is ready"
 
-# ── 9. Run migrations + seed ─────────────────────────────────────────────────
+# ── 8. Run migrations + seed ─────────────────────────────────────────────────
 step "Running migrations and seeding sample data..."
 ./vendor/bin/sail artisan migrate --seed --ansi
 ok "Database migrated and seeded (14 sample clients created)"
 
-# ── 10. Install Node dependencies ────────────────────────────────────────────
+# ── 9. Install Node dependencies ─────────────────────────────────────────────
 step "Installing Node.js dependencies..."
 ./vendor/bin/sail npm install
 ok "Node.js dependencies installed"
 
-# ── 11. Build frontend assets ────────────────────────────────────────────────
+# ── 10. Build frontend assets ─────────────────────────────────────────────────
 step "Building frontend assets (Vite + TailwindCSS)..."
 ./vendor/bin/sail npm run build
 ok "Frontend assets built"
@@ -118,5 +124,5 @@ echo -e "  🗄️   Database:   ${CYAN}mysql://sail:password@localhost:3306/lar
 echo ""
 echo -e "  Start dev server:  ${YELLOW}./vendor/bin/sail npm run dev${NC}"
 echo -e "  Stop containers:   ${YELLOW}./vendor/bin/sail down${NC}"
-echo -e "  Run all commands:  ${YELLOW}make help${NC}"
+echo -e "  All commands:      ${YELLOW}make help${NC}"
 echo ""

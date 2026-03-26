@@ -18,10 +18,10 @@ A full-stack client management application built with:
 Before you begin, make sure you have the following installed on your machine:
 
 - **Docker Desktop** — [https://www.docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop)
-- **PHP 8.2+** — needed once to bootstrap Composer before Sail takes over
-- **Composer** — [https://getcomposer.org](https://getcomposer.org)
 
-> After the first install, **everything runs through Sail** (no local PHP/Node needed day-to-day).
+> **That's it.** No local PHP, Composer, or Node.js installation required.
+> Composer runs inside Docker during install, so `ext-gd` and all PHP extensions are always available.
+> After the first install, **everything runs through Sail**.
 
 ---
 
@@ -40,9 +40,9 @@ bash install.sh
 
 The script will:
 1. Copy `.env.example` → `.env`
-2. Install Composer dependencies (local PHP, one time only)
+2. Install Composer dependencies **inside Docker** (no host PHP needed, ext-gd included)
 3. Generate `APP_KEY`
-4. Build the Docker image
+4. Build the Sail Docker image
 5. Start containers (`sail up -d`)
 6. Wait for MySQL to be ready
 7. Run migrations + seed 14 sample clients
@@ -53,7 +53,7 @@ The script will:
 
 ---
 
-### Option B — Manual (step by step)
+### Option B — Manual (step by step, Docker-only)
 
 ```bash
 # 1. Clone
@@ -63,11 +63,21 @@ cd laravel-vue-inertia-app
 # 2. Environment
 cp .env.example .env
 
-# 3. Install PHP dependencies (local PHP required here only)
-composer install
+# 3. Install PHP dependencies via Docker (no host PHP/ext-gd required)
+docker run --rm \
+    -u "$(id -u):$(id -g)" \
+    -v "$(pwd):/var/www/html" \
+    -w /var/www/html \
+    laravelsail/php82-composer:latest \
+    composer install --no-interaction --prefer-dist --optimize-autoloader --no-scripts
 
-# 4. Generate app key
-php artisan key:generate
+# 4. Generate app key via Docker
+docker run --rm \
+    -u "$(id -u):$(id -g)" \
+    -v "$(pwd):/var/www/html" \
+    -w /var/www/html \
+    laravelsail/php82-composer:latest \
+    php artisan key:generate --ansi
 
 # 5. Build & start Docker containers
 ./vendor/bin/sail build --no-cache
