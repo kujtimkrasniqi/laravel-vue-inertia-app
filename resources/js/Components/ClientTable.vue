@@ -25,18 +25,25 @@ function cancelDelete() {
 
 function deleteClient(client) {
     router.delete(route('clients.destroy', client.id), {
+        preserveScroll: true,
         onFinish: () => { confirmingDelete.value = null; },
     });
 }
 
 // ── Mark as paid ─────────────────────────────────────────────────────────────
+// Track which client ID is currently being processed to show loading state
+// and prevent double-clicks.
+const processingId = ref(null);
 
-/**
- * Sends a PATCH request to extend the client's expiry_date by +1 month.
- * The extension is calculated server-side from expiry_date — not today.
- */
 function markAsPaid(client) {
-    router.patch(route('clients.markAsPaid', client.id));
+    if (processingId.value !== null) return;   // already processing another row
+
+    processingId.value = client.id;
+
+    router.patch(route('clients.markAsPaid', client.id), {}, {
+        preserveScroll: true,                  // don't jump to top after success
+        onFinish: () => { processingId.value = null; },
+    });
 }
 </script>
 
@@ -102,6 +109,7 @@ function markAsPaid(client) {
                         v-for="client in clients"
                         :key="client.id"
                         class="hover:bg-gray-50/50 transition-colors"
+                        :class="processingId === client.id ? 'opacity-60' : ''"
                     >
                         <td class="px-5 py-4 font-semibold text-gray-800">
                             {{ client.name }}
@@ -132,25 +140,32 @@ function markAsPaid(client) {
                         <td class="px-5 py-4">
                             <div class="flex items-center justify-end gap-2">
 
-                                <!-- Mark as Paid: extends expiry_date +1 month from current expiry -->
+                                <!-- Mark as Paid -->
                                 <button
                                     @click="markAsPaid(client)"
-                                    class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition"
-                                    title="Extend subscription by 1 month (from current expiry date)"
+                                    :disabled="processingId !== null"
+                                    class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed"
+                                    :class="processingId === client.id
+                                        ? 'bg-indigo-100 text-indigo-400'
+                                        : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'"
+                                    title="Extend subscription by 1 month from current expiry date"
                                 >
-                                    💳 Mark Paid
+                                    <span v-if="processingId === client.id">⏳ Processing…</span>
+                                    <span v-else>💳 Mark Paid</span>
                                 </button>
 
                                 <button
                                     @click="emit('edit', client)"
-                                    class="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-200 transition"
+                                    :disabled="processingId !== null"
+                                    class="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-200 transition disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     ✏️ Edit
                                 </button>
 
                                 <button
                                     @click="confirmDelete(client)"
-                                    class="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 transition"
+                                    :disabled="processingId !== null"
+                                    class="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 transition disabled:cursor-not-allowed disabled:opacity-50"
                                     title="Permanently delete this client"
                                 >
                                     🗑️

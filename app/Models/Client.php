@@ -54,7 +54,7 @@ class Client extends Model
     protected function isActive(): Attribute
     {
         return Attribute::make(
-            get: fn () => Carbon::today()->lte($this->expiry_date),
+            get: fn () => $this->expiry_date !== null && Carbon::today()->lte($this->expiry_date),
         );
     }
 
@@ -64,7 +64,7 @@ class Client extends Model
     protected function isExpired(): Attribute
     {
         return Attribute::make(
-            get: fn () => Carbon::today()->gt($this->expiry_date),
+            get: fn () => $this->expiry_date === null || Carbon::today()->gt($this->expiry_date),
         );
     }
 
@@ -89,8 +89,16 @@ class Client extends Model
      */
     public function markAsPaid(): void
     {
-        $this->expiry_date = $this->expiry_date->addMonth();
+        // Guard: if expiry_date is null (e.g. legacy row), fall back to today
+        $base = $this->expiry_date ?? Carbon::today();
+
+        // Use copy() so we don't mutate the original Carbon instance before save
+        $this->expiry_date = $base->copy()->addMonth();
         $this->save();
+
+        // Refresh from DB so all accessors (is_active, daysRemaining) reflect
+        // the saved value immediately — important for the flash message.
+        $this->refresh();
     }
 
     // -------------------------------------------------------------------------
@@ -102,6 +110,10 @@ class Client extends Model
      */
     public function daysRemaining(): int
     {
+        if (! $this->expiry_date) {
+            return 0;
+        }
+
         $diff = Carbon::today()->diffInDays($this->expiry_date, false);
 
         return max(0, (int) $diff);
