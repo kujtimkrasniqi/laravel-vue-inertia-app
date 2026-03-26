@@ -14,7 +14,7 @@ return new class extends Migration
             $table->string('phone');
             $table->string('email')->nullable();
             $table->date('start_date');
-            $table->date('expiry_date');
+            $table->date('expiry_date')->nullable();
             $table->timestamps();
         });
     }
