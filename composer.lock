@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "b539705e52b9068eff1d75787905a519",
+    "content-hash": "ebf9ce677ceff7a12e656630688550da",
     "packages": [
         {
             "name": "brick/math",
@@ -9130,7 +9130,19 @@
     },
     "platform-dev": {},
     "platform-overrides": {
-        "ext-gd": "1.0"
+        "ext-ctype": "1.0",
+        "ext-dom": "1.0",
+        "ext-fileinfo": "1.0",
+        "ext-gd": "1.0",
+        "ext-iconv": "1.0",
+        "ext-libxml": "1.0",
+        "ext-mbstring": "1.0",
+        "ext-simplexml": "1.0",
+        "ext-xml": "1.0",
+        "ext-xmlreader": "1.0",
+        "ext-xmlwriter": "1.0",
+        "ext-zip": "1.0",
+        "ext-zlib": "1.0"
     },
     "plugin-api-version": "2.9.0"
 }
