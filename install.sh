@@ -140,9 +140,35 @@ step "Starting containers in background..."
 ok "Containers started"
 
 # ── 9. Wait for MySQL to be ready ────────────────────────────────────────────
+# Strategy: first wait until the mysql client can actually connect and SELECT 1,
+# using the credentials from .env. This is more reliable than mysqladmin ping,
+# which can succeed before the user/database are fully initialised.
 step "Waiting for MySQL to be ready..."
-RETRIES=30
-until ./vendor/bin/sail exec -T mysql mysqladmin ping --silent 2>/dev/null; do
+
+# Read DB credentials from .env (defaults match .env.example)
+DB_HOST=$(grep  "^DB_HOST="     .env | cut -d= -f2 | tr -d '"' | tr -d "'")
+DB_PORT=$(grep  "^DB_PORT="     .env | cut -d= -f2 | tr -d '"' | tr -d "'")
+DB_DATABASE=$(grep "^DB_DATABASE=" .env | cut -d= -f2 | tr -d '"' | tr -d "'")
+DB_USERNAME=$(grep "^DB_USERNAME=" .env | cut -d= -f2 | tr -d '"' | tr -d "'")
+DB_PASSWORD=$(grep "^DB_PASSWORD=" .env | cut -d= -f2 | tr -d '"' | tr -d "'")
+
+DB_HOST="${DB_HOST:-mysql}"
+DB_PORT="${DB_PORT:-3306}"
+DB_DATABASE="${DB_DATABASE:-laravel}"
+DB_USERNAME="${DB_USERNAME:-sail}"
+DB_PASSWORD="${DB_PASSWORD:-password}"
+
+RETRIES=60
+until ./vendor/bin/sail exec -T mysql \
+    mysql \
+        --host=127.0.0.1 \
+        --port=3306 \
+        --user="$DB_USERNAME" \
+        --password="$DB_PASSWORD" \
+        --database="$DB_DATABASE" \
+        --execute="SELECT 1;" \
+    > /dev/null 2>&1
+do
     RETRIES=$((RETRIES - 1))
     if [ "$RETRIES" -eq 0 ]; then
         fail "MySQL did not become ready in time. Check: ./vendor/bin/sail logs mysql"
@@ -152,6 +178,9 @@ until ./vendor/bin/sail exec -T mysql mysqladmin ping --silent 2>/dev/null; do
 done
 echo ""
 ok "MySQL is ready"
+
+# Extra grace period — let MySQL finish any remaining init scripts
+sleep 2
 
 # ── 10. Run migrations + seed ─────────────────────────────────────────────────
 step "Running migrations and seeding sample data..."
